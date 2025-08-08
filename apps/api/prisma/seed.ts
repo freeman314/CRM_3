@@ -18,6 +18,22 @@ async function main() {
       create: s,
     });
   }
+
+  // create admin if not exists
+  const bcrypt = require('bcrypt');
+  const adminUsername = 'admin';
+  const adminEmail = 'admin@example.com';
+  const passwordHash = await bcrypt.hash('admin123', 10);
+  await prisma.user.upsert({
+    where: { username: adminUsername },
+    update: {},
+    create: {
+      username: adminUsername,
+      email: adminEmail,
+      passwordHash,
+      role: 'admin',
+    },
+  });
 }
 
 main()
