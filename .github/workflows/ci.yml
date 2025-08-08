@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: crm
+          POSTGRES_PASSWORD: crm
+          POSTGRES_DB: crm3
+        options: >-
+          --health-cmd="pg_isready -U crm" --health-interval=10s --health-timeout=5s --health-retries=5
+    env:
+      DATABASE_URL: postgresql://crm:crm@localhost:5432/crm3?schema=public
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - name: Install root deps
+        run: npm ci --ignore-scripts
+      - name: Install api deps
+        run: |
+          cd apps/api
+          npm ci --ignore-scripts
+      - name: Generate Prisma client
+        run: |
+          cd apps/api
+          npm run prisma:generate
+      - name: Migrate DB
+        run: |
+          cd apps/api
+          npm run prisma:migrate -- --create-only
+          npx prisma migrate deploy
+      - name: Seed DB
+        run: |
+          cd apps/api
+          npm run prisma:seed
+      - name: Lint api
+        run: |
+          cd apps/api
+          npm run lint -- --max-warnings=0
+      - name: Test api (unit)
+        run: |
+          cd apps/api
+          npm test -- --ci
+      - name: Test api (e2e)
+        run: |
+          cd apps/api
+          npm run test:e2e -- --ci
+      - name: Build api
+        run: |
+          cd apps/api
+          npm run build
