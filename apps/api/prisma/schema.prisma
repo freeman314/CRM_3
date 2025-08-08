@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  manager
+  chief_manager
+  admin
+}
+
+enum TaskStatus {
+  new
+  in_progress
+  completed
+}
+
+enum CallResult {
+  successful
+  no_answer
+  rescheduled
+}
+
+model User {
+  id             String   @id @default(cuid())
+  username       String   @unique
+  email          String   @unique
+  passwordHash   String
+  role           UserRole @default(manager)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  tasks          Task[]   @relation("TasksAssignedToUser")
+  calls          Call[]   @relation("CallsByManager")
+  clientsAssigned Client[] @relation("ClientsAssignedToUser")
+}
+
+model ClientStatus {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  clients     Client[]
+  callsWithNewStatus Call[] @relation("CallNewStatus")
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  clients     Client[]
+}
+
+model City {
+  id      String   @id @default(cuid())
+  name    String
+  region  String?
+  clients Client[]
+
+  @@unique([name, region])
+}
+
+model Client {
+  id                String        @id @default(cuid())
+  firstName         String
+  lastName          String
+  email             String?       @unique
+  phone             String?
+  address           String?
+  cityId            String?
+  city              City?         @relation(fields: [cityId], references: [id])
+  currentProvider   String?
+  contractEndDate   DateTime?
+  notes             String?
+  statusId          String?
+  status            ClientStatus? @relation(fields: [statusId], references: [id])
+  categoryId        String?
+  category          Category?     @relation(fields: [categoryId], references: [id])
+  potential         String?
+  assignedManagerId String?
+  assignedManager   User?         @relation("ClientsAssignedToUser", fields: [assignedManagerId], references: [id])
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  tasks             Task[]
+  calls             Call[]
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  title        String
+  description  String?
+  clientId     String
+  client       Client     @relation(fields: [clientId], references: [id])
+  assignedToId String
+  assignedTo   User       @relation(name: "TasksAssignedToUser", fields: [assignedToId], references: [id])
+  status       TaskStatus @default(new)
+  dueDate      DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model Call {
+  id           String       @id @default(cuid())
+  clientId     String
+  client       Client       @relation(fields: [clientId], references: [id])
+  managerId    String
+  manager      User         @relation(name: "CallsByManager", fields: [managerId], references: [id])
+  dateTime     DateTime     @default(now())
+  result       CallResult
+  comment      String?
+  newStatusId  String?
+  newStatus    ClientStatus? @relation("CallNewStatus", fields: [newStatusId], references: [id])
+  newPotential String?
+}
