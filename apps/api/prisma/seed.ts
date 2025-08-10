@@ -32,6 +32,24 @@ async function main() {
       email: adminEmail,
       passwordHash,
       role: 'admin',
+      firstLogin: false,
+      active: true,
+    },
+  });
+
+  const managerUsername = 'manager';
+  const managerEmail = 'manager@example.com';
+  const managerPass = await bcrypt.hash('manager123', 10);
+  await prisma.user.upsert({
+    where: { username: managerUsername },
+    update: {},
+    create: {
+      username: managerUsername,
+      email: managerEmail,
+      passwordHash: managerPass,
+      role: 'manager',
+      firstLogin: false,
+      active: true,
     },
   });
 }

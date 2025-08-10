@@ -28,33 +28,33 @@
 ## Project setup
 
 ```bash
-$ npm install
+npm ci
 ```
 
-## Compile and run the project
+## Database (development)
+
+Set `DATABASE_URL` to your Postgres instance. To use Docker locally:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+docker compose up -d
+export DATABASE_URL='postgresql://crm:crm@localhost:5432/crm3?schema=public'
+npx prisma generate
+npx prisma migrate dev --name init
+npm run prisma:seed
 ```
 
-## Run tests
+## Compile and run
 
 ```bash
-# unit tests
-$ npm run test
+npm run start:dev
+```
 
-# e2e tests
-$ npm run test:e2e
+Swagger: `http://localhost:3000/api-docs`
 
-# test coverage
-$ npm run test:cov
+## Tests
+
+```bash
+npm run test:e2e
 ```
 
 ## Deployment

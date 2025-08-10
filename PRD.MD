@@ -16,201 +16,188 @@
 
 ### 1.2 Технологический стек
 
-- Backend: Node.js с Express.js
-- Frontend: React.js
-- База данных: MongoDB или PostgreSQL
-- Аутентификация: JSON Web Tokens (JWT)
-- Веб-сервер: Nginx (для обратного прокси и балансировки нагрузки)
+- Backend: NestJS 11 (REST), Prisma ORM
+- База данных: PostgreSQL
+- Аутентификация и безопасность: JWT (access/refresh), Passport-JWT, bcrypt, Helmet, Throttler, CORS
+- Документация API: Swagger (OpenAPI)
+- Frontend: React 19, React Router 7, @tanstack/react-query 5, Vite
+- Инфраструктура: Docker Compose (PostgreSQL, pgAdmin), Nginx (опционально для прод)
 
 ## 2. Архитектура проекта
 
-Проект следует архитектуре MVC (Model-View-Controller) и состоит из следующих основных компонентов:
+Проект следует модульной архитектуре NestJS и разделён на backend и frontend.
 
-### 2.1 Серверная часть (Backend)
+### 2.1 Серверная часть (Backend — NestJS)
 
-- `index.js`: Точка входа в приложение, настройка сервера Express
-- `db.js`: Конфигурация подключения к базе данных
-- `routes/`: Директория с файлами маршрутизации
-  - `clientRoutes.js`: Обработка запросов, связанных с клиентами
-  - `clientStatusRoutes.js`: Обработка запросов, связанных со статусами клиентов
-  - `userRoutes.js`: Обработка запросов, связанных с пользователями системы
-  - `taskRoutes.js`: Обработка запросов, связанных с задачами
-  - `callRoutes.js`: Обработка запросов, связанных с звонками
-- `models/`: Директория с моделями данных
-  - `client.js`: Модель данных клиента
-  - `clientStatus.js`: Модель данных статуса клиента
-  - `user.js`: Модель данных пользователя
-  - `task.js`: Модель данных задачи
-  - `call.js`: Модель данных звонка
-- `controllers/`: Директория с контроллерами
-  - `clientController.js`: Логика обработки запросов для клиентов
-  - `userController.js`: Логика обработки запросов для пользователей
-  - `taskController.js`: Логика обработки запросов для задач
-  - `callController.js`: Логика обработки запросов для звонков
-- `middlewares/`: Директория с промежуточными обработчиками
-  - `auth.js`: Middleware для аутентификации и авторизации
-- `utils/`: Директория с вспомогательными функциями
+- Точка входа: `main.ts` — подключение Helmet, CORS, глобальных пайпов валидации (`ValidationPipe`), фильтра исключений (`HttpExceptionFilter`), и Swagger.
+- Корневой модуль: `app.module.ts` — подключает `ConfigModule`, `ThrottlerModule`, `PrismaModule` и доменные модули.
+- Доменные модули:
+  - `auth`: `AuthController`, `AuthService`, `JwtStrategy`, `JwtAuthGuard`, `RolesGuard`, декоратор `@Roles`.
+  - `users`: `UsersController` (`GET /users/me`).
+  - `clients`: контроллер/сервис/DTO для клиентов.
+  - `client-statuses`, `categories`, `cities`, `calls`, `tasks`, `dashboard` — отдельные модули по областям.
+  - `prisma`: `PrismaService` для доступа к БД.
+  - `common/filters`: `HttpExceptionFilter` для единообразных ответов об ошибках.
+- Глобальные Guard'ы: `ThrottlerGuard` (rate limiting). Роли применяются через `RolesGuard` на уровне контроллеров/хэндлеров совместно с `JwtAuthGuard`.
 
-### 2.2 Клиентская часть (Frontend)
+### 2.2 Клиентская часть (Frontend — React)
 
-- `src/`
-  - `components/`: Многоразовые компоненты React
-  - `pages/`: Компоненты страниц
-  - `services/`: Сервисы для работы с API
-  - `context/`: Контексты React для управления состоянием
-  - `hooks/`: Пользовательские хуки
-  - `utils/`: Вспомогательные функции
-  - `styles/`: Стили CSS или SCSS
-  - `App.js`: Основной компонент приложения
-  - `index.js`: Точка входа для React приложения
+- Роутинг: `routes.tsx` c защищённой оболочкой `ProtectedLayout`.
+- Аутентификация: контекст `AuthProvider` с axios-интерцепторами и хранением токенов в `sessionStorage`.
+- Данные/кеш: React Query для серверного состояния.
+- Основные страницы: Login, Dashboard, Clients List, Create Client, Client View.
+
+### 2.3 Безопасность и кросс-срезочная логика
+
+- Валидация DTO: `class-validator` + глобальный `ValidationPipe` (whitelist, forbidNonWhitelisted, transform).
+- Исключения: `HttpExceptionFilter` (структурированный ответ об ошибках).
+- Throttling: `@nestjs/throttler` (по умолчанию 100 запросов/60 сек).
+- CORS: источники из переменной `CORS_ORIGIN` (поддержка нескольких через запятую), `credentials: true`.
+- Swagger: `GET /api-docs`.
 
 ### 2.3 Вспомогательные скрипты
 
 - `initClientStatuses.js`: Скрипт для инициализации базовых статусов клиентов в базе данных
 
-## 3. Модели данных
+## 3. Модели данных (Prisma)
 
-### 3.1 Клиент (Client)
+Ключевые перечисления и модели соответствуют `prisma/schema.prisma`:
 
-```javascript
-{
-  id: ObjectId,
-  firstName: String,
-  lastName: String,
-  email: String,
-  phone: String,
-  address: String,
-  city: { type: ObjectId, ref: 'City' },
-  currentProvider: String,
-  contractEndDate: Date,
-  notes: String,
-  status: { type: ObjectId, ref: 'ClientStatus' },
-  category: { type: ObjectId, ref: 'Category' },
-  potential: String,
-  assignedManager: { type: ObjectId, ref: 'User' },
-  createdAt: Date,
-  updatedAt: Date
+```prisma
+enum UserRole { manager chief_manager admin }
+enum TaskStatus { new in_progress completed }
+enum CallResult { successful no_answer rescheduled }
+
+model User {
+  id               String   @id @default(cuid())
+  username         String   @unique
+  email            String   @unique
+  passwordHash     String
+  role             UserRole @default(manager)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  tasks            Task[]   @relation("TasksAssignedToUser")
+  calls            Call[]   @relation("CallsByManager")
+  clientsAssigned  Client[] @relation("ClientsAssignedToUser")
+  refreshTokenHash String?
+  firstLogin       Boolean  @default(true)
 }
-```
 
-### 3.2 Статус клиента (ClientStatus)
-
-```javascript
-{
-  id: ObjectId,
-  name: String,
-  description: String
+model ClientStatus {
+  id                 String   @id @default(cuid())
+  name               String   @unique
+  description        String?
+  clients            Client[]
+  callsWithNewStatus Call[]   @relation("CallNewStatus")
 }
-```
 
-### 3.3 Категория клиента (Category)
-
-```javascript
-{
-  id: ObjectId,
-  name: String,
-  description: String
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  clients     Client[]
 }
-```
 
-### 3.4 Город (City)
-
-```javascript
-{
-  id: ObjectId,
-  name: String,
-  region: String
+model City {
+  id      String   @id @default(cuid())
+  name    String
+  region  String?
+  clients Client[]
+  @@unique([name, region])
 }
-```
 
-### 3.5 Пользователь (User)
-
-```javascript
-{
-  id: ObjectId,
-  username: String,
-  email: String,
-  passwordHash: String,
-  role: { type: String, enum: ['manager', 'chief_manager', 'admin'] },
-  createdAt: Date,
-  updatedAt: Date
+model Client {
+  id                String        @id @default(cuid())
+  firstName         String
+  lastName          String
+  email             String?       @unique
+  phone             String?
+  address           String?
+  cityId            String?
+  city              City?         @relation(fields: [cityId], references: [id])
+  currentProvider   String?
+  contractEndDate   DateTime?
+  notes             String?
+  statusId          String?
+  status            ClientStatus? @relation(fields: [statusId], references: [id])
+  categoryId        String?
+  category          Category?     @relation(fields: [categoryId], references: [id])
+  potential         String?
+  assignedManagerId String?
+  assignedManager   User?         @relation("ClientsAssignedToUser", fields: [assignedManagerId], references: [id])
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  tasks             Task[]
+  calls             Call[]
+  @@index([lastName, firstName])
+  @@index([statusId, contractEndDate])
+  @@index([contractEndDate])
 }
-```
 
-### 3.6 Задача (Task)
-
-```javascript
-{
-  id: ObjectId,
-  title: String,
-  description: String,
-  client: { type: ObjectId, ref: 'Client' },
-  assignedTo: { type: ObjectId, ref: 'User' },
-  status: { type: String, enum: ['new', 'in_progress', 'completed'] },
-  dueDate: Date,
-  createdAt: Date,
-  updatedAt: Date
+model Task {
+  id           String     @id @default(cuid())
+  title        String
+  description  String?
+  clientId     String
+  client       Client     @relation(fields: [clientId], references: [id])
+  assignedToId String
+  assignedTo   User       @relation(name: "TasksAssignedToUser", fields: [assignedToId], references: [id])
+  status       TaskStatus @default(new)
+  dueDate      DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 }
-```
 
-### 3.7 Звонок (Call)
-
-```javascript
-{
-  id: ObjectId,
-  client: { type: ObjectId, ref: 'Client' },
-  manager: { type: ObjectId, ref: 'User' },
-  dateTime: Date,
-  result: { type: String, enum: ['successful', 'no_answer', 'rescheduled'] },
-  comment: String,
-  newStatus: { type: ObjectId, ref: 'ClientStatus' },
-  newPotential: String
+model Call {
+  id           String        @id @default(cuid())
+  clientId     String
+  client       Client        @relation(fields: [clientId], references: [id])
+  managerId    String
+  manager      User          @relation(name: "CallsByManager", fields: [managerId], references: [id])
+  dateTime     DateTime      @default(now())
+  result       CallResult
+  comment      String?
+  newStatusId  String?
+  newStatus    ClientStatus? @relation("CallNewStatus", fields: [newStatusId], references: [id])
+  newPotential String?
 }
 ```
 
 ## 4. API Endpoints
 
-### 4.1 Клиенты
+Префикс сервера по умолчанию: `/` (на dev фронтенд проксирует `/api -> :3000`). Эндпоинты в Swagger (`/api-docs`).
 
-- `GET /api/clients`: Получить список всех клиентов
-- `POST /api/clients`: Создать нового клиента
-- `GET /api/clients/:id`: Получить информацию о конкретном клиенте
-- `PUT /api/clients/:id`: Обновить информацию о клиенте
-- `DELETE /api/clients/:id`: Удалить клиента
+### 4.1 Аутентификация и пользователи
+- `POST /auth/login`: вход, ответ `{ access_token, refresh_token, firstLogin }`.
+- `POST /auth/refresh`: обновление токенов; тело `{ userId, refreshToken }`. Ротация refresh.
+- `POST /auth/logout` (JWT): инвалидация refresh.
+- `POST /auth/change-password` (JWT): смена пароля, сброс `firstLogin=false`.
+- `GET /users/me` (JWT): текущий пользователь.
 
-### 4.2 Статусы клиентов
+### 4.2 Клиенты (JWT, роль: manager/chief_manager/admin)
+- `GET /clients`: список с пагинацией и фильтрами `page`, `pageSize`, `q`, `statusId`, `dueInDays`.
+- `GET /clients/:id`: карточка клиента.
+- `POST /clients` (роль: manager/chief_manager/admin): создать клиента.
+- `PATCH /clients/:id` (роль: manager/chief_manager/admin): обновить клиента.
+- `DELETE /clients/:id` (роль: admin/chief_manager): удалить клиента.
 
-- `GET /api/client-statuses`: Получить список всех статусов клиентов
-- `POST /api/client-statuses`: Создать новый статус клиента
-- `GET /api/client-statuses/:id`: Получить информацию о конкретном статусе
-- `PUT /api/client-statuses/:id`: Обновить информацию о статусе
-- `DELETE /api/client-statuses/:id`: Удалить статус
+### 4.3 Справочники (JWT)
+- `GET /client-statuses`, `GET /client-statuses/:id`.
+- `POST /client-statuses`, `PATCH /client-statuses/:id` (роль: admin/chief_manager).
+- `DELETE /client-statuses/:id` (роль: admin).
+- `GET /categories`, `GET /categories/:id`.
+- `POST /categories`, `PATCH /categories/:id` (роль: chief_manager/admin).
+- `DELETE /categories/:id` (роль: admin).
+- `GET /cities`, `GET /cities/:id`.
+- `POST /cities`, `PATCH /cities/:id` (роль: chief_manager/admin).
+- `DELETE /cities/:id` (роль: admin).
 
-### 4.3 Пользователи
+### 4.4 Задачи и звонки (JWT)
+- Tasks: `GET /tasks`, `GET /tasks/:id`, `POST /tasks`, `PATCH /tasks/:id` (роль: manager/chief_manager/admin), `DELETE /tasks/:id` (роль: chief_manager/admin).
+- Calls: `GET /calls/client/:clientId`, `POST /calls` (роль: manager/chief_manager/admin).
 
-- `POST /api/users/register`: Регистрация нового пользователя
-- `POST /api/users/login`: Аутентификация пользователя
-- `GET /api/users/profile`: Получить профиль текущего пользователя
-- `PUT /api/users/profile`: Обновить профиль текущего пользователя
-- `GET /api/users`: Получить список всех пользователей (только для админа)
-- `PUT /api/users/:id`: Обновить информацию о пользователе (только для админа)
-- `DELETE /api/users/:id`: Удалить пользователя (только для админа)
-
-### 4.4 Задачи
-
-- `GET /api/tasks`: Получить список задач
-- `POST /api/tasks`: Создать новую задачу
-- `GET /api/tasks/:id`: Получить информацию о конкретной задаче
-- `PUT /api/tasks/:id`: Обновить информацию о задаче
-- `DELETE /api/tasks/:id`: Удалить задачу
-
-### 4.5 Звонки
-
-- `GET /api/calls`: Получить список звонков
-- `POST /api/calls`: Создать новую запись о звонке
-- `GET /api/calls/:id`: Получить информацию о конкретном звонке
-- `PUT /api/calls/:id`: Обновить информацию о звонке
-- `DELETE /api/calls/:id`: Удалить запись о звонке
+### 4.5 Health
+- `GET /health`: проверка работоспособности.
 
 ## 5. Функциональность клиентской части
 
@@ -228,7 +215,7 @@
 
 ### 5.2 Взаимодействие с сервером
 
-Клиентская часть использует Fetch API или Axios для отправки запросов на сервер и получения данных.
+Клиентская часть использует Axios (с интерцепторами для JWT/refresh) и React Query для запросов и кеширования.
 
 ## 6. Структура пользовательского интерфейса
 
@@ -475,7 +462,10 @@
 
 ### 9.2 Требования к серверу
 - Операционная система: Linux (предпочтительно Ubuntu Server)
-- Минимальные требования к оборудованию: [будет определено после тестирования производительности]
+- Node.js LTS для сервиса API (NestJS) и Nginx (опционально) для реверс-прокси.
+- PostgreSQL 16 (можно через Docker). В репозитории присутствует `docker-compose.yml` для БД и pgAdmin.
+- Переменные окружения: `DATABASE_URL`, `JWT_ACCESS_SECRET`, `JWT_REFRESH_SECRET`, `CORS_ORIGIN`, `PORT`.
+- Dev: фронтенд (Vite) проксирует `/api` на порт API.
 
 ## 10. Управление пользователями системы
 
@@ -513,13 +503,15 @@
 ## 12. Тестирование
 
 ### 12.1 Виды тестирования
-- Модульное тестирование
-- Интеграционное тестирование
-- Тестирование пользовательского интерфейса
-- Нагрузочное тестирование
+- Модульное (сервисы, утилиты)
+- Интеграционное/e2e (NestJS + Supertest + Jest)
+- UI-тестирование (по мере усложнения фронтенда)
+- Нагрузочное (по необходимости)
 
 ### 12.2 Тестовые сценарии
-- Разработка основных тестовых сценариев для ключевых функций системы
+- Аутентификация: login/refresh/logout/change-password, негативные кейсы
+- Клиенты: список, фильтры, создание/обновление/удаление с проверкой ролей
+- Справочники/задачи/звонки: базовые CRUD и права доступа
 
 ## 13. Документация
 
